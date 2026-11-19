@@ -1,0 +1,460 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #05070c;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #e8edf7;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#app canvas {
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 250px;
+  pointer-events: auto;
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(130, 160, 220, 0.18);
+  border-radius: 14px;
+  padding: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.panel h1 {
+  font-size: 15px;
+  letter-spacing: 0.4px;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: #8fa0bd;
+  margin: 2px 0 10px;
+}
+
+.themes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.themes button {
+  padding: 8px 6px;
+  font-size: 12.5px;
+  background: rgba(28, 36, 52, 0.6);
+  border: 1px solid rgba(130, 160, 220, 0.2);
+  border-radius: 9px;
+  cursor: pointer;
+  color: #c6d2e8;
+  transition: all 0.15s;
+}
+
+.themes button:hover {
+  border-color: rgba(120, 170, 255, 0.5);
+  color: #fff;
+}
+
+.themes button.active {
+  background: rgba(90, 140, 255, 0.18);
+  border-color: #5a8cff;
+  color: #fff;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.row label {
+  font-size: 12.5px;
+  color: #a9b8d4;
+}
+
+.row select {
+  flex: 1;
+  background: #141b28;
+  color: #dbe4f5;
+  border: 1px solid rgba(130, 160, 220, 0.25);
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+button.primary {
+  width: 100%;
+  padding: 9px;
+  background: linear-gradient(135deg, #3f6dff, #7a4dff);
+  border: none;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+button.primary:hover {
+  filter: brightness(1.15);
+}
+
+button.primary:active {
+  transform: scale(0.98);
+}
+
+.meta {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #8fa0bd;
+  line-height: 1.5;
+}
+
+.minimap-box {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  pointer-events: auto;
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(130, 160, 220, 0.18);
+  border-radius: 14px;
+  padding: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.minimap-box canvas {
+  display: block;
+  border-radius: 8px;
+}
+
+.minimap-caption {
+  font-size: 10.5px;
+  color: #8fa0bd;
+  margin-top: 6px;
+  text-align: center;
+}
+
+.hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  color: rgba(200, 212, 235, 0.55);
+  background: rgba(8, 10, 16, 0.5);
+  padding: 6px 14px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+
+.timer {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 13px;
+  color: #a9b8d4;
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(130, 160, 220, 0.18);
+  border-radius: 12px;
+  padding: 8px 14px;
+  backdrop-filter: blur(10px);
+}
+
+.timer span {
+  color: #7fd4ff;
+  font-weight: 600;
+}
+
+.start {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.55);
+  backdrop-filter: blur(5px);
+  pointer-events: auto;
+  animation: fadeIn 0.3s ease;
+}
+
+.start-card {
+  background: rgba(12, 17, 27, 0.92);
+  border: 1px solid rgba(130, 160, 220, 0.25);
+  border-radius: 20px;
+  padding: 30px 36px;
+  width: 460px;
+  max-width: calc(100vw - 40px);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.start-card h1 {
+  font-size: 24px;
+}
+
+.start-card .subtitle {
+  font-size: 12px;
+  color: #8fa0bd;
+  margin: 4px 0 18px;
+}
+
+.mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 12px;
+  background: rgba(28, 36, 52, 0.6);
+  border: 1px solid rgba(130, 160, 220, 0.2);
+  border-radius: 14px;
+  cursor: pointer;
+  color: #c6d2e8;
+  transition: all 0.15s;
+}
+
+.mode-btn:hover {
+  border-color: rgba(120, 170, 255, 0.6);
+  background: rgba(90, 140, 255, 0.12);
+  color: #fff;
+}
+
+.mode-btn .mode-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mode-btn .mode-desc {
+  font-size: 10.5px;
+  color: #8fa0bd;
+  line-height: 1.4;
+}
+
+.game-setup {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(130, 160, 220, 0.15);
+  text-align: left;
+  animation: fadeIn 0.25s ease;
+}
+
+.setup-label {
+  font-size: 11px;
+  color: #8fa0bd;
+  margin-bottom: 6px;
+}
+
+.game-setup .row {
+  margin: 10px 0 14px;
+}
+
+.start-hint {
+  margin-top: 16px;
+  font-size: 10.5px;
+  color: rgba(200, 212, 235, 0.4);
+}
+
+.timer span {
+  color: #7fd4ff;
+  font-weight: 600;
+}
+
+.victory {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.45);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+  animation: fadeIn 0.3s ease;
+}
+
+.victory-card {
+  background: rgba(12, 17, 27, 0.92);
+  border: 1px solid rgba(130, 160, 220, 0.25);
+  border-radius: 18px;
+  padding: 32px 44px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.victory-card h2 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.victory-card .v-time {
+  font-size: 36px;
+  font-weight: 700;
+  color: #7fd4ff;
+  margin: 10px 0 20px;
+}
+
+.victory-card .buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.victory-card .buttons .primary {
+  width: auto;
+  padding: 9px 18px;
+}
+
+.victory-card button.secondary {
+  padding: 9px 16px;
+  background: rgba(40, 50, 70, 0.6);
+  border: 1px solid rgba(130, 160, 220, 0.3);
+  border-radius: 9px;
+  color: #dbe4f5;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.victory-card button.secondary:hover {
+  border-color: rgba(120, 170, 255, 0.5);
+  color: #fff;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hp-wrap {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(130, 160, 220, 0.18);
+  border-radius: 12px;
+  padding: 8px 14px;
+  backdrop-filter: blur(10px);
+}
+
+.hp-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a9b8d4;
+  letter-spacing: 1px;
+}
+
+.hp-bar {
+  width: 190px;
+  height: 12px;
+  background: rgba(8, 10, 16, 0.8);
+  border: 1px solid rgba(130, 160, 220, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #3ddc7f, #7fe08a);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.hp-fill.mid {
+  background: linear-gradient(90deg, #e0b13d, #e8d070);
+}
+
+.hp-fill.low {
+  background: linear-gradient(90deg, #e04c3d, #e88a70);
+  animation: hpPulse 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes hpPulse {
+  from {
+    filter: brightness(0.85);
+  }
+  to {
+    filter: brightness(1.25);
+  }
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(200, 20, 20, 0.55) 100%);
+  transition: opacity 0.1s linear;
+}
+
+.death {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(60, 5, 5, 0.45);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  animation: fadeIn 0.3s ease;
+}
+
+.death-card {
+  background: rgba(27, 12, 12, 0.92);
+  border: 1px solid rgba(220, 80, 60, 0.3);
+  border-radius: 18px;
+  padding: 28px 48px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.death-card h2 {
+  font-size: 22px;
+  color: #ff8a70;
+}
+
+.death-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #c9a0a0;
+}
+
+.gp-focus {
+  outline: 2px solid #7fd4ff !important;
+  outline-offset: 3px;
+}
