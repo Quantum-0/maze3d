@@ -458,3 +458,75 @@ button.primary:active {
   outline: 2px solid #7fd4ff !important;
   outline-offset: 3px;
 }
+
+.twitch-status {
+  margin-top: 10px;
+  font-size: 11.5px;
+  text-align: center;
+  color: #a9b8d4;
+}
+
+.twitch-status .dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: #8fa0bd;
+}
+
+.twitch-status[data-state='connected'] .dot {
+  background: #58ff9d;
+  box-shadow: 0 0 8px rgba(88, 255, 157, 0.6);
+}
+
+.twitch-status[data-state='connecting'] .dot,
+.twitch-status[data-state='reconnecting'] .dot {
+  background: #ffd166;
+  animation: dotBlink 0.9s ease-in-out infinite alternate;
+}
+
+.twitch-status[data-state='error'] {
+  color: #ff8a70;
+}
+
+.twitch-status[data-state='error'] .dot {
+  background: #ff5a4d;
+}
+
+@keyframes dotBlink {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.chat-commands {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 16px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #a9b8d4;
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(130, 160, 220, 0.18);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+}
+
+.chat-commands b {
+  margin-left: 14px;
+  font-weight: 700;
+  color: #ffe14d;
+}
+
+@media (max-width: 900px) {
+  .chat-commands {
+    top: 62px;
+  }
+}

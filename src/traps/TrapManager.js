@@ -1,8 +1,16 @@
 import * as THREE from 'three';
-import { CELL, cellCenter } from '../world/themeHelpers.js';
+import { CELL, cellCenter, worldToCell } from '../world/themeHelpers.js';
 import { Sfx } from './Sfx.js';
 import { Debris } from './Debris.js';
-import { THEME_CFG, JetTrap, SpikeTrap, RockfallTrap, FakeWallTrap, CuttableObstacle } from './trapTypes.js';
+import {
+  THEME_CFG,
+  JetTrap,
+  SpikeTrap,
+  RockfallTrap,
+  FakeWallTrap,
+  CuttableObstacle,
+  GroundArrow,
+} from './trapTypes.js';
 
 const SIDE_DIRS = {
   top: [0, -1],
@@ -10,6 +18,11 @@ const SIDE_DIRS = {
   left: [-1, 0],
   right: [1, 0],
 };
+
+// Ловушка отработала и больше ни на что не влияет.
+const isSpent = (t) => t.dead || t.state === 'done' || t.state === 'broken';
+// Расстояние от игрока до ловушки от чата в клетках пути.
+const CHAT_TRAP_DIST = 4;
 
 export class TrapManager {
   constructor(engine) {
@@ -23,6 +36,7 @@ export class TrapManager {
     this.cfg = null;
     this.rng = null;
     this.themeId = null;
+    this.maze = null;
     this.wallNormal = null;
     this.dirty = false;
     this.onDamage = null;
@@ -31,6 +45,7 @@ export class TrapManager {
   build(maze, themeId, rng, player) {
     this.dispose();
     this.player = player;
+    this.maze = maze;
     this.themeId = themeId;
     this.rng = rng;
     this.cfg = THEME_CFG[themeId] || THEME_CFG.winter;
@@ -156,6 +171,9 @@ export class TrapManager {
     for (const trap of this.traps) {
       trap.update(dt, playerPos.x, playerPos.z, jumpY, t);
     }
+    for (let i = this.traps.length - 1; i >= 0; i--) {
+      if (this.traps[i].dead) this.removeTrap(this.traps[i]);
+    }
     if (this.debris) this.debris.update(dt);
     if (this.dirty) {
       this.dirty = false;
@@ -181,6 +199,137 @@ export class TrapManager {
       }
     }
     return hit;
+  }
+
+  // Создаёт ловушку и запоминает, что она добавила в общую группу, чтобы потом снять её с карты.
+  _create(TrapClass, ...args) {
+    const known = new Set(this.group.children);
+    const trap = new TrapClass(this, ...args);
+    trap.objects = this.group.children.filter((o) => !known.has(o));
+    this.traps.push(trap);
+    return trap;
+  }
+
+  removeTrap(trap) {
+    const i = this.traps.indexOf(trap);
+    if (i === -1) return;
+    this.traps.splice(i, 1);
+    if (trap.dispose) trap.dispose();
+    for (const obj of trap.objects || []) {
+      obj.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
+        }
+      });
+      this.group.remove(obj);
+    }
+    if (trap.blocking || trap.collider) this.markDirty();
+  }
+
+  // Ловушка от чата: ровно 4 клетки пути от игрока, тип случайный из тех, что влезают в клетку.
+  spawnChatTrap(fromCell, limit) {
+    const maze = this.maze;
+    if (!maze || !maze.inBounds(fromCell.x, fromCell.y)) return false;
+    const dist = this._bfsDistances(maze, fromCell);
+    const busy = new Set();
+    for (const t of this.traps) {
+      const c = worldToCell(maze, t.x, t.z);
+      busy.add(c.x + ',' + c.y);
+    }
+    const ring = [];
+    const free = [];
+    for (let y = 0; y < maze.rows; y++) {
+      for (let x = 0; x < maze.cols; x++) {
+        if (dist[y][x] !== CHAT_TRAP_DIST || (x === maze.finish.x && y === maze.finish.y)) continue;
+        ring.push({ x, y });
+        if (!busy.has(x + ',' + y)) free.push({ x, y });
+      }
+    }
+    if (!ring.length) return false;
+    const pool = free.length ? free : ring;
+    const cell = pool[(this.rng() * pool.length) | 0];
+
+    const center = cellCenter(maze, cell.x, cell.y);
+    const walls = maze.cell(cell.x, cell.y).walls;
+    const walled = Object.entries(SIDE_DIRS).filter(([dir]) => walls[dir]);
+    // Преграда ставится на границу клетки: берём только те границы, за которыми клетка не ближе к игроку.
+    const open = Object.entries(SIDE_DIRS)
+      .filter(([dir, v]) => !walls[dir] && dist[cell.y + v[1]][cell.x + v[0]] >= CHAT_TRAP_DIST)
+      .map(([, v]) => ({ ...this._edgeCenter(maze, cell.x, cell.y, v), horizontal: v[1] !== 0 }))
+      .filter((e) => !this.traps.some((t) => (t instanceof FakeWallTrap || t instanceof CuttableObstacle) && Math.hypot(t.x - e.x, t.z - e.z) < 0.1));
+    const kinds = ['spikes', 'rock'];
+    if (walled.length) kinds.push('jet');
+    if (open.length) kinds.push('edge');
+
+    const pick = (arr) => arr[(this.rng() * arr.length) | 0];
+    const kind = pick(kinds);
+    let trap;
+    if (kind === 'jet') {
+      const [, v] = pick(walled);
+      const horizontal = v[1] !== 0;
+      trap = this._create(
+        JetTrap,
+        center.x + v[0] * (CELL / 2 - 0.02),
+        center.z + v[1] * (CELL / 2 - 0.02),
+        horizontal,
+        horizontal ? -v[1] : -v[0]
+      );
+    } else if (kind === 'edge') {
+      const e = pick(open);
+      trap =
+        this.rng() < 0.5
+          ? this._create(FakeWallTrap, e.x, e.z, e.horizontal)
+          : this._create(CuttableObstacle, e.x, e.z, e.horizontal);
+    } else if (kind === 'rock') {
+      trap = this._create(RockfallTrap, center.x, center.z);
+    } else {
+      trap = this._create(SpikeTrap, center.x, center.z, this.rng() < 0.5 ? 'auto' : 'prox');
+    }
+    trap.chat = true;
+
+    const live = this.traps.filter((t) => t.chat && !isSpent(t));
+    for (let i = 0; live.length - i > limit; i++) this.removeTrap(live[i]);
+
+    this.markDirty();
+    this.sfx.crack({ x: trap.x, y: 0.4, z: trap.z });
+    this.debris.burst(trap.x, 0.4, trap.z, 6, this.cfg.accent, 2);
+    return true;
+  }
+
+  spawnChatRock(cell) {
+    if (!this.maze || !this.maze.inBounds(cell.x, cell.y)) return false;
+    const c = cellCenter(this.maze, cell.x, cell.y);
+    this._create(RockfallTrap, c.x, c.z, { oneshot: true }).chat = true;
+    return true;
+  }
+
+  // Стрелка в клетке cell в сторону соседней клетки кратчайшего пути к алтарю.
+  showExitArrow(cell, life) {
+    const maze = this.maze;
+    if (!maze || !maze.inBounds(cell.x, cell.y)) return false;
+    const dist = this._bfsDistances(maze, maze.finish);
+    const here = dist[cell.y][cell.x];
+    if (here <= 0) return false;
+    for (const [dir, v] of Object.entries(SIDE_DIRS)) {
+      if (maze.cell(cell.x, cell.y).walls[dir]) continue;
+      if (dist[cell.y + v[1]][cell.x + v[0]] !== here - 1) continue;
+      const c = cellCenter(maze, cell.x, cell.y);
+      for (let i = this.traps.length - 1; i >= 0; i--) {
+        if (this.traps[i] instanceof GroundArrow) this.removeTrap(this.traps[i]);
+      }
+      // На старте и финише пол занимает основание портала/алтаря — стрелку кладём поверх него.
+      const onPad =
+        (cell.x === maze.start.x && cell.y === maze.start.y) || (cell.x === maze.finish.x && cell.y === maze.finish.y);
+      this._create(GroundArrow, c.x, c.z, v[0], v[1], life, onPad ? 0.42 : 0.13).chat = true;
+      return true;
+    }
+    return false;
+  }
+
+  _edgeCenter(maze, x, y, v) {
+    const c = cellCenter(maze, x, y);
+    return { x: c.x + (v[0] * CELL) / 2, z: c.z + (v[1] * CELL) / 2 };
   }
 
   refreshColliders() {

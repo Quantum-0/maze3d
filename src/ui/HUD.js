@@ -56,6 +56,7 @@ export class HUD {
               <span class="mode-desc">Найдите алтарь. Камера следует за героем</span>
             </button>
           </div>
+          <div class="twitch-status" id="twitch-status" style="display:none"><span class="dot"></span><span id="twitch-label"></span></div>
           <div class="game-setup" id="game-setup" style="display:none">
             <div class="setup-label">Локация</div>
             <div class="themes" id="start-themes"></div>
@@ -73,6 +74,7 @@ export class HUD {
           <div class="start-hint">Esc — вернуться в меню</div>
         </div>
       </div>
+      <div class="chat-commands" id="chat-commands" style="display:none">Команды чата:<b>!враг</b><b>!ловушка</b><b>!камень</b><b>!путь</b></div>
     `;
 
     const panelThemes = this.root.querySelector('#panel-themes');
@@ -133,6 +135,11 @@ export class HUD {
     this.hpFill = this.root.querySelector('#hp-fill');
     this.vignetteEl = this.root.querySelector('#vignette');
     this.deathEl = this.root.querySelector('#death');
+    this.twitchStatus = this.root.querySelector('#twitch-status');
+    this.twitchLabel = this.root.querySelector('#twitch-label');
+    this.chatCommands = this.root.querySelector('#chat-commands');
+    this.twitchState = null;
+    this.mode = null;
     this._maze = null;
     this._playerPos = null;
     this._focused = null;
@@ -148,6 +155,7 @@ export class HUD {
   }
 
   setMode(mode) {
+    this.mode = mode;
     this.panel.style.display = mode === 'viewer' ? 'block' : 'none';
     this.minimapBox.style.display = mode === 'viewer' ? 'block' : 'none';
     this.timerEl.style.display = mode === 'game' ? 'block' : 'none';
@@ -164,6 +172,26 @@ export class HUD {
     } else {
       this.hintEl.style.display = 'none';
     }
+    this._updateChatCommands();
+  }
+
+  setTwitch({ state, name }) {
+    this.twitchState = state;
+    this.twitchStatus.dataset.state = state;
+    const short = (name || '').slice(0, 30);
+    this.twitchLabel.textContent = {
+      connecting: `Twitch: подключение к ${short}…`,
+      connected: `Twitch подключён: ${short}`,
+      reconnecting: 'Twitch: переподключение…',
+      error: short ? `Twitch: не удалось подключиться к ${short}` : 'Twitch: не удалось подключиться',
+    }[state];
+    this.twitchStatus.style.display = 'block';
+    this._updateChatCommands();
+  }
+
+  // Список команд видят зрители — он показывается в игре, пока чат подключён.
+  _updateChatCommands() {
+    this.chatCommands.style.display = this.twitchState === 'connected' && this.mode === 'game' ? 'block' : 'none';
   }
 
   setActiveTheme(id) {

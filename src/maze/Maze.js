@@ -1,5 +1,10 @@
 import { mulberry32, shuffle } from '../core/utils.js';
 
+// Одинаковый ключ для границы двух клеток, в каком бы порядке они ни шли.
+export function edgeKey(ax, ay, bx, by) {
+  return ax < bx || (ax === bx && ay < by) ? `${ax},${ay}|${bx},${by}` : `${bx},${by}|${ax},${ay}`;
+}
+
 const DIRS = {
   top: { dx: 0, dy: -1, opposite: 'bottom' },
   right: { dx: 1, dy: 0, opposite: 'left' },

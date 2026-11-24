@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { CELL, cellCenter } from '../world/themeHelpers.js';
+import { CELL, cellCenter, worldToCell } from '../world/themeHelpers.js';
+import { edgeKey } from '../maze/Maze.js';
 import { rand } from '../core/utils.js';
 
 const std = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true, ...opts });
@@ -218,13 +219,6 @@ const SETS = {
   ],
 };
 
-function worldToCell(maze, x, z) {
-  return {
-    x: Math.round(x / CELL + (maze.cols - 1) / 2),
-    y: Math.round(z / CELL + (maze.rows - 1) / 2),
-  };
-}
-
 function hasLOS(maze, x0, z0, x1, z1) {
   const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.4));
   let pc = worldToCell(maze, x0, z0);
@@ -257,6 +251,49 @@ const DIRS = {
   right: [1, 0],
 };
 
+const SPAWN_DUR = 0.4;
+const CHAT_ENEMY_MIN_PATH = 6;
+const TAG_FONT = '600 44px "Segoe UI", system-ui, sans-serif';
+const TAG_H = 68;
+const TAG_PAD = 26;
+const TAG_WORLD_H = 0.56;
+const TAG_NEAR_DIST = 26;
+
+function tagTextColor(hex) {
+  if (typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return '#eef3ff';
+  const c = new THREE.Color(hex);
+  const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  return lum < 0.35 ? '#' + c.lerp(new THREE.Color(0xffffff), 0.45).getHexString() : hex;
+}
+
+function makeNameTag(text, color) {
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = TAG_FONT;
+  const width = Math.ceil(measure.measureText(text).width) + TAG_PAD * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = TAG_H;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.roundRect(0, 0, width, TAG_H, TAG_H / 2);
+  ctx.fillStyle = 'rgba(10, 14, 22, 0.78)';
+  ctx.fill();
+  ctx.font = TAG_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, width / 2, TAG_H / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const base = new THREE.Vector3((TAG_WORLD_H * width) / TAG_H, TAG_WORLD_H, 1);
+  sprite.scale.copy(base);
+  sprite.position.y = 2.5;
+  sprite.userData.baseScale = base;
+  return sprite;
+}
+
 class Enemy {
   constructor(mgr, def, cell) {
     this.mgr = mgr;
@@ -280,6 +317,10 @@ class Enemy {
     this.lostTimer = 0;
     this.phase = mgr.rng() * Math.PI * 2;
     this.wake = def.pattern === 'phase' ? rand(mgr.rng, 3, 5) : rand(mgr.rng, 1, 2.5);
+    this.chat = false;
+    this.hunt = false;
+    this.spawnIn = 0;
+    this.tag = null;
 
     if (def.kind === 'golem') this.model = buildGolem(mgr.rng);
     else if (def.kind === 'goblin') this.model = buildGoblin(mgr.rng, !!def.rangedCfg?.troll);
@@ -307,6 +348,11 @@ class Enemy {
       );
       mgr.group.add(this.aimBeam);
     }
+  }
+
+  attachTag(name, color) {
+    this.tag = makeNameTag(name, color);
+    this.group.add(this.tag);
   }
 
   hit(fromX, fromZ) {
@@ -347,8 +393,10 @@ class Enemy {
     const maze = this.mgr.maze;
     const options = [];
     for (const [dir, v] of Object.entries(DIRS)) {
+      const n = { x: this.cell.x + v[0], y: this.cell.y + v[1] };
       if (maze.cell(this.cell.x, this.cell.y).walls[dir]) continue;
-      options.push({ x: this.cell.x + v[0], y: this.cell.y + v[1] });
+      if (this.mgr.blockedEdges && this.mgr.blockedEdges.has(edgeKey(this.cell.x, this.cell.y, n.x, n.y))) continue;
+      options.push(n);
     }
     if (!options.length) return null;
     return options[(this.mgr.rng() * options.length) | 0];
@@ -425,6 +473,7 @@ class Enemy {
 
     const def = this.def;
     const awake = this.wake <= 0;
+    if (this.hunt && combat && this.state !== 'chase') this.state = 'chase';
     if (def.pattern === 'phase') {
       if (!awake || !combat) {
         this.state = 'drift';
@@ -487,7 +536,7 @@ class Enemy {
           this.patrolStep(dt);
         }
       } else if (combat) {
-        if (!los && dist > def.sight * 1.3) {
+        if (!this.hunt && !los && dist > def.sight * 1.3) {
           this.lostTimer += dt;
           if (this.lostTimer > 2.5) {
             this.state = 'patrol';
@@ -502,7 +551,7 @@ class Enemy {
           const c = cellCenter(this.mgr.maze, next.x, next.y);
           this.stepTo(c.x, c.z, def.chase, dt);
           this.cell = worldToCell(this.mgr.maze, this.pos.x, this.pos.z);
-        } else {
+        } else if (this.mgr.inPlayerCell(this.cell)) {
           this.stepTo(px, pz, def.chase, dt);
         }
         if (combat && awake && dist < 1.4 && this.attackCd <= 0 && jumpY < 1.6) {
@@ -549,6 +598,17 @@ class Enemy {
       m.group.scale.setScalar(1 + Math.sin(t * 24) * 0.05);
     } else {
       m.group.scale.setScalar(1);
+    }
+    if (this.spawnIn > 0) {
+      this.spawnIn -= dt;
+      const k = 1 - Math.max(0, this.spawnIn) / SPAWN_DUR;
+      m.group.scale.multiplyScalar(0.15 + 0.85 * (1 - (1 - k) * (1 - k)));
+      if (this.tag) this.tag.material.opacity = k;
+    }
+    if (this.tag) {
+      const cam = this.mgr.engine.camera.position;
+      const far = Math.max(1, Math.hypot(cam.x - this.pos.x, cam.z - this.pos.z) / TAG_NEAR_DIST);
+      this.tag.scale.copy(this.tag.userData.baseScale).multiplyScalar(far);
     }
     if (this.attackAnim > 0) {
       m.group.rotation.x = -Math.sin(((0.35 - this.attackAnim) / 0.35) * Math.PI) * 0.45;
@@ -598,9 +658,15 @@ class Enemy {
 
   dispose() {
     this.group.traverse((o) => {
+      if (o.isSprite) return;
       if (o.geometry) o.geometry.dispose();
       if (o.material) o.material.dispose();
     });
+    if (this.tag) {
+      this.tag.material.map.dispose();
+      this.tag.material.dispose();
+      this.tag = null;
+    }
     if (this.aimBeam) {
       this.aimBeam.geometry.dispose();
       this.aimBeam.material.dispose();
@@ -622,14 +688,18 @@ export class EnemyManager {
     this.debris = null;
     this.sfx = null;
     this.playerDist = null;
+    this.playerDistOpen = null;
+    this.blockedEdges = null;
     this.distTimer = 0;
     this.onDamage = null;
     this.armed = false;
+    this.themeId = null;
   }
 
   build(maze, themeId, rng, player, debris, sfx) {
     this.dispose();
     this.maze = maze;
+    this.themeId = themeId;
     this.rng = rng;
     this.player = player;
     this.debris = debris;
@@ -680,27 +750,109 @@ export class EnemyManager {
     this.recomputeDist();
   }
 
+  // Клетка для врага от чата: до игрока не меньше minPath клеток свободного от преград пути
+  // (иначе враг не дойдёт), вдали от алтаря и, если есть выбор, вне прямой видимости.
+  _pickSpawnCell(minPath) {
+    const maze = this.maze;
+    const p = this.player.position;
+    const from = worldToCell(maze, p.x, p.z);
+    if (!maze.inBounds(from.x, from.y)) return null;
+    const distP = this.playerDist || this.bfsFrom(maze, from);
+    const distF = this.bfsFrom(maze, maze.finish);
+    const taken = new Set(this.enemies.filter((e) => e.alive).map((e) => e.cell.x + ',' + e.cell.y));
+    const far = [];
+    const hidden = [];
+    let farthest = null;
+    for (let y = 0; y < maze.rows; y++) {
+      for (let x = 0; x < maze.cols; x++) {
+        const d = distP[y][x];
+        if (d < 1 || distF[y][x] < 2 || taken.has(x + ',' + y)) continue;
+        if (!farthest || d > distP[farthest.y][farthest.x]) farthest = { x, y };
+        if (d < minPath) continue;
+        far.push({ x, y });
+        const c = cellCenter(maze, x, y);
+        if (!hasLOS(maze, c.x, c.z, p.x, p.z)) hidden.push({ x, y });
+      }
+    }
+    const pool = hidden.length ? hidden : far.length ? far : farthest ? [farthest] : [];
+    return pool.length ? pool[(this.rng() * pool.length) | 0] : null;
+  }
+
+  // Живых врагов от чата остаётся не больше limit: старейших убираем обычной смертью.
+  spawnChatEnemy(name, color, limit) {
+    const cell = this._pickSpawnCell(CHAT_ENEMY_MIN_PATH);
+    if (!cell) return false;
+    const own = this.enemies.filter((e) => e.alive && e.chat);
+    for (let i = 0; own.length - i >= limit; i++) {
+      own[i].hp = 1;
+      own[i].hit(own[i].pos.x + 0.5, own[i].pos.z);
+    }
+    const set = SETS[this.themeId] || SETS.winter;
+    const enemy = new Enemy(this, { ...set[0], role: 'melee' }, cell);
+    enemy.chat = true;
+    enemy.hunt = true;
+    enemy.state = 'chase';
+    enemy.spawnIn = SPAWN_DUR;
+    enemy.attachTag(name, color);
+    this.enemies.push(enemy);
+    this.debris.burst(enemy.pos.x, 0.9, enemy.pos.z, 10, enemy.model.colors, 2.8);
+    this.sfx.crumble({ x: enemy.pos.x, y: 0.8, z: enemy.pos.z });
+    return true;
+  }
+
   recomputeDist() {
     const p = this.player.position;
     const cell = worldToCell(this.maze, p.x, p.z);
     if (this.maze.inBounds(cell.x, cell.y)) {
-      this.playerDist = this.bfsFrom(this.maze, cell);
+      this.blockedEdges = this._blockedEdges();
+      this.playerDist = this.bfsFrom(this.maze, cell, this.blockedEdges);
+      this.playerDistOpen = this.blockedEdges.size ? this.bfsFrom(this.maze, cell) : this.playerDist;
     }
   }
 
-  nextStepFrom(cell) {
-    if (!this.playerDist) return null;
-    const base = this.playerDist[cell.y] ? this.playerDist[cell.y][cell.x] : -1;
-    if (base === undefined || base < 0) return null;
-    let best = null;
-    let bestD = base;
+  // Границы клеток, перегороженные ловушками (завалы, ложные стены): враги не могут их пройти,
+  // поэтому путь к игроку ведёт в объезд.
+  _blockedEdges() {
     const maze = this.maze;
+    const cols = this.player.extraColliders;
+    const blocked = new Set();
+    if (!cols || !cols.length) return blocked;
+    const covered = (x, z) => cols.some((k) => x >= k.minX && x <= k.maxX && z >= k.minZ && z <= k.maxZ);
+    for (let y = 0; y < maze.rows; y++) {
+      for (let x = 0; x < maze.cols; x++) {
+        const c = cellCenter(maze, x, y);
+        if (x + 1 < maze.cols && !maze.cell(x, y).walls.right && covered(c.x + CELL / 2, c.z)) {
+          blocked.add(edgeKey(x, y, x + 1, y));
+        }
+        if (y + 1 < maze.rows && !maze.cell(x, y).walls.bottom && covered(c.x, c.z + CELL / 2)) {
+          blocked.add(edgeKey(x, y, x, y + 1));
+        }
+      }
+    }
+    return blocked;
+  }
+
+  // Соседняя клетка на пути к игроку. Если ловушки отрезали игрока — следующая клетка
+  // кратчайшего пути по стенам, но не дальше преграды: у неё враг ждёт, пока проход расчистят.
+  nextStepFrom(cell) {
+    return this._lowerStep(this.playerDist, cell) || this._lowerStep(this.playerDistOpen, cell);
+  }
+
+  inPlayerCell(cell) {
+    return !!this.playerDistOpen && this.playerDistOpen[cell.y] !== undefined && this.playerDistOpen[cell.y][cell.x] === 0;
+  }
+
+  _lowerStep(field, cell) {
+    if (!field || !field[cell.y] || field[cell.y][cell.x] < 0) return null;
+    const maze = this.maze;
+    let best = null;
+    let bestD = field[cell.y][cell.x];
     for (const [dir, v] of Object.entries(DIRS)) {
       if (maze.cell(cell.x, cell.y).walls[dir]) continue;
       const nx = cell.x + v[0];
       const ny = cell.y + v[1];
-      if (!maze.inBounds(nx, ny)) continue;
-      const nd = this.playerDist[ny][nx];
+      if (!maze.inBounds(nx, ny) || this.blockedEdges.has(edgeKey(cell.x, cell.y, nx, ny))) continue;
+      const nd = field[ny][nx];
       if (nd >= 0 && nd < bestD) {
         bestD = nd;
         best = { x: nx, y: ny };
@@ -709,7 +861,7 @@ export class EnemyManager {
     return best;
   }
 
-  bfsFrom(maze, from) {
+  bfsFrom(maze, from, blocked = null) {
     const dist = Array.from({ length: maze.rows }, () => new Array(maze.cols).fill(-1));
     dist[from.y][from.x] = 0;
     const q = [from];
@@ -721,6 +873,7 @@ export class EnemyManager {
         const nx = c.x + v[0];
         const ny = c.y + v[1];
         if (!maze.inBounds(nx, ny) || dist[ny][nx] !== -1) continue;
+        if (blocked && blocked.has(edgeKey(c.x, c.y, nx, ny))) continue;
         dist[ny][nx] = dist[c.y][c.x] + 1;
         q.push({ x: nx, y: ny });
       }
@@ -808,6 +961,9 @@ export class EnemyManager {
         e.pos.z = playerPos.z + (dz / d) * min;
       }
     }
+    // Преследующий враг расталкивает тех, кто не преследует: иначе два врага, идущие навстречу
+    // в коридоре, навсегда застревают лбами.
+    const chasing = (e) => e.hunt || e.state === 'chase';
     for (let i = 0; i < this.enemies.length; i++) {
       const a = this.enemies[i];
       if (!a.alive) continue;
@@ -818,13 +974,16 @@ export class EnemyManager {
         const dz = b.pos.z - a.pos.z;
         const d = Math.hypot(dx, dz);
         const min = a.def.radius + b.def.radius;
-        if (d < min && d > 1e-4) {
-          const push = (min - d) / 2;
-          a.pos.x -= (dx / d) * push;
-          a.pos.z -= (dz / d) * push;
-          b.pos.x += (dx / d) * push;
-          b.pos.z += (dz / d) * push;
-        }
+        if (d >= min || d <= 1e-4) continue;
+        const push = (min - d) / 2;
+        const aChase = chasing(a);
+        const bChase = chasing(b);
+        const ka = bChase && !aChase ? 2 : aChase && !bChase ? 0 : 1;
+        const kb = aChase && !bChase ? 2 : bChase && !aChase ? 0 : 1;
+        a.pos.x -= (dx / d) * push * ka;
+        a.pos.z -= (dz / d) * push * ka;
+        b.pos.x += (dx / d) * push * kb;
+        b.pos.z += (dz / d) * push * kb;
       }
     }
     for (const e of this.enemies) {

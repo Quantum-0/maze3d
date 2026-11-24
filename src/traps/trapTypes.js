@@ -351,21 +351,25 @@ export class SpikeTrap {
 }
 
 export class RockfallTrap {
-  constructor(mgr, x, z) {
+  constructor(mgr, x, z, { oneshot = false } = {}) {
     const cfg = mgr.cfg;
     this.mgr = mgr;
     this.x = x;
     this.z = z;
-    this.state = 'idle';
-    this.timer = 0;
-    this.armed = true;
+    this.oneshot = oneshot;
+    this.dead = false;
+    this.state = oneshot ? 'shadow' : 'idle';
+    this.timer = oneshot ? 1.5 : 0;
+    this.armed = !oneshot;
 
-    const pebbleMat = std(cfg.rock);
-    for (let i = 0; i < 4; i++) {
-      const p = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(mgr.rng, 0.09, 0.17), 0), pebbleMat);
-      p.position.set(x + rand(mgr.rng, -0.5, 0.5), 0.06, z + rand(mgr.rng, -0.5, 0.5));
-      p.rotation.set(mgr.rng() * 3, mgr.rng() * 3, 0);
-      mgr.group.add(p);
+    if (!oneshot) {
+      const pebbleMat = std(cfg.rock);
+      for (let i = 0; i < 4; i++) {
+        const p = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(mgr.rng, 0.09, 0.17), 0), pebbleMat);
+        p.position.set(x + rand(mgr.rng, -0.5, 0.5), 0.06, z + rand(mgr.rng, -0.5, 0.5));
+        p.rotation.set(mgr.rng() * 3, mgr.rng() * 3, 0);
+        mgr.group.add(p);
+      }
     }
 
     this.shadow = new THREE.Mesh(
@@ -387,6 +391,7 @@ export class RockfallTrap {
       maxZ: z + 1.0,
     };
     this.blocking = false;
+    if (oneshot) mgr.sfx.click({ x, y: 0, z });
   }
 
   update(dt, px, pz) {
@@ -437,10 +442,14 @@ export class RockfallTrap {
         this.rock.visible = false;
         this.blocking = false;
         this.mgr.markDirty();
-        this.state = 'cooldown';
-        this.armed = false;
-        this.timer = 12;
         this.rock.scale.setScalar(1);
+        if (this.oneshot) {
+          this.dead = true;
+        } else {
+          this.state = 'cooldown';
+          this.armed = false;
+          this.timer = 12;
+        }
       }
     } else if (this.state === 'cooldown') {
       this.timer -= dt;
@@ -698,5 +707,53 @@ export class CuttableObstacle {
       if (o.geometry) o.geometry.dispose();
       if (o.material) o.material.dispose();
     });
+  }
+}
+
+export class GroundArrow {
+  constructor(mgr, x, z, dirX, dirZ, life, y = 0.13) {
+    this.x = x;
+    this.z = z;
+    this.life = life;
+    this.dead = false;
+
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.26, -1.35);
+    shape.lineTo(0.26, -1.35);
+    shape.lineTo(0.26, 0.15);
+    shape.lineTo(0.7, 0.15);
+    shape.lineTo(0, 1.35);
+    shape.lineTo(-0.7, 0.15);
+    shape.lineTo(-0.26, 0.15);
+    shape.closePath();
+    const geo = new THREE.ShapeGeometry(shape);
+    geo.rotateX(Math.PI / 2);
+    this.material = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(2.4, 2, 0),
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.position.set(x, y, z);
+    this.mesh.rotation.y = Math.atan2(dirX, dirZ);
+    this.mesh.renderOrder = 2;
+    mgr.group.add(this.mesh);
+  }
+
+  update(dt, px, pz, jumpY, t) {
+    this.life -= dt;
+    if (this.life <= 0) {
+      this.dead = true;
+      return;
+    }
+    const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+    this.mesh.scale.setScalar(0.94 + pulse * 0.1);
+    this.material.opacity = Math.min(1, this.life) * (0.78 + pulse * 0.22);
+  }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.material.dispose();
   }
 }

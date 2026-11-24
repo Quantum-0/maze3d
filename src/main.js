@@ -10,6 +10,8 @@ import { Player } from './entities/Player.js';
 import { TrapManager } from './traps/TrapManager.js';
 import { EnemyManager } from './entities/Enemy.js';
 import { mulberry32 } from './core/utils.js';
+import { TwitchChat } from './twitch/TwitchChat.js';
+import { ChatCommands } from './twitch/ChatCommands.js';
 
 const state = {
   theme: 'winter',
@@ -145,6 +147,7 @@ function rebuild(newMaze = true) {
   }
   won = false;
   startTime = performance.now();
+  chatCommands.reset();
   hud.hideVictory();
   hud.setActiveTheme(state.theme);
   hud.setMeta({
@@ -247,6 +250,23 @@ player.onAttackHit = () => {
   traps.handleAttack(player.position, player.angle);
   enemies.handleAttack(player.position, player.angle);
 };
+
+// Команды из чата действуют только в идущей игре: не в меню, не после победы и не во время респауна.
+const chatCommands = new ChatCommands({
+  player,
+  traps,
+  enemies,
+  isActive: () => mode === 'game' && !menuOpen && !won && !player.dead,
+});
+const chat = new TwitchChat({
+  onStatus: (status) => hud.setTwitch(status),
+  onMessage: (user, text) => chatCommands.handle(user, text),
+});
+chat.start();
+if (import.meta.env.DEV) {
+  window.__chatCommands = chatCommands;
+  window.__twitchChat = chat;
+}
 
 const _camGoal = new THREE.Vector3();
 const menuPad = { up: false, down: false, left: false, right: false, a: false };

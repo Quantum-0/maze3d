@@ -12,6 +12,13 @@ export function cellCenter(maze, x, y) {
   };
 }
 
+export function worldToCell(maze, x, z) {
+  return {
+    x: Math.round(x / CELL + (maze.cols - 1) / 2),
+    y: Math.round(z / CELL + (maze.rows - 1) / 2),
+  };
+}
+
 export function mazeExtent(maze) {
   return Math.max(maze.cols, maze.rows) * CELL;
 }
